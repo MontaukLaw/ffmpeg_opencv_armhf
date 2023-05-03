@@ -20,7 +20,7 @@ private:
     int fps; // fps是视频通道独有的，fps（一秒钟多少帧）
 
 public:
-    VideoChannel(int stream_index, AVCodecContext *codecContext, AVRational time_base, int fps);
+    VideoChannel(int stream_index, AVCodecContext *codecContext, int fps);
     ~VideoChannel();
 
     void start();

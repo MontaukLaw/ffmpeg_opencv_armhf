@@ -1,5 +1,9 @@
 #include "DerryPlayer.h"
 
+#include <iostream>
+#define FPS 30
+using namespace std;
+
 DerryPlayer::DerryPlayer(const char *data_source)
 {
     // this->data_source = data_source;
@@ -39,142 +43,241 @@ void *task_prepare(void *args)
     player->prepare_();
     return nullptr; // 必须返回，坑，错误很难找
 }
+void DerryPlayer::prepare__()
+{
+    const AVCodec *codec;
+    AVCodecParserContext *parser;
+    AVCodecContext *codecContext = nullptr;
+    codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    if (!codec)
+    {
+        cout << "can not find decoder" << endl;
+        return;
+    }
+    parser = av_parser_init(codec->id);
+    if (!parser)
+    {
+        cout << "parser not found\n"
+             << endl;
+        return;
+    }
+    codecContext = avcodec_alloc_context3(codec);
+    if (!codecContext)
+    {
+        cout << "Could not allocate audio codec context\n"
+             << endl;
+        return;
+    }
 
-void DerryPlayer::prepare_()
-{ // 属于 子线程了 并且 拥有  DerryPlayer的实例 的 this
+    video_channel = new VideoChannel(0, codecContext, FPS);
+    video_channel->setRenderCallback(renderCallback);
 
-    // 为什么FFmpeg源码，大量使用上下文Context？
-    // 答：因为FFmpeg源码是纯C的，他不像C++、Java ， 上下文的出现是为了贯彻环境，就相当于Java的this能够操作成员
-
-    /**
-     * TODO 第一步：打开媒体地址（文件路径， 直播地址rtmp）
-     */
     formatContext = avformat_alloc_context();
+    cout << "data_source: " << data_source << endl;
 
     // 字典（键值对）
     AVDictionary *dictionary = nullptr;
     // 设置超时（5秒）
-    av_dict_set(&dictionary, "listen_timeout", "5000000", 0); // 单位微妙
+    av_dict_set(&dictionary, "listen_timeout", "10000000", 0); // 单位微妙
 
+    cout << "avformat_open_input:" << endl;
     /**
      * 1，AVFormatContext *
      * 2，路径 url:文件路径或直播地址
      * 3，AVInputFormat *fmt  Mac、Windows 摄像头、麦克风， 我们目前安卓用不到
      * 4，各种设置：例如：Http 连接超时， 打开rtmp的超时  AVDictionary **options
      */
-    int r = avformat_open_input(&formatContext, data_source, nullptr, &dictionary);
+    int r = avformat_open_input(&formatContext, "rtmp://ziku.montauklaw.com:1935/livestream", nullptr, &dictionary);
+
     // 释放字典
     av_dict_free(&dictionary);
     if (r)
     {
+        cout << "open media failed :" << r << endl;
         avformat_close_input(&formatContext);
         return;
     }
 
-    // 你在 xxx.mp4 能够拿到
-    // 你在 xxx.flv 拿不到，是因为封装格式的原因
-    // formatContext->duration;
+    AVCodecParameters *codecParameters = avcodec_parameters_alloc();
 
+    codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
+    codecParameters->codec_id = AV_CODEC_ID_H264;
+    codecParameters->width = 1920;
+    codecParameters->height = 1080;
+
+    r = avcodec_parameters_to_context(codecContext, codecParameters);
+    if (r < 0)
+    {
+        cout << "avcodec_parameters_to_context failed" << endl;
+        avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
+        avformat_close_input(&formatContext);
+        return;
+    }
+
+    if (avcodec_open2(codecContext, codec, NULL) < 0)
+    {
+        cout << "Could not open codec" << endl;
+        return;
+    }
+
+    // AVStream *stream = formatContext->streams[0];
+    ifReady = true;
+}
+
+void DerryPlayer::prepare_()
+{
+    formatContext = avformat_alloc_context();
+    cout << "data_source: " << data_source << endl;
+
+    // 字典（键值对）
+    AVDictionary *dictionary = nullptr;
+    // 设置超时（5秒）
+    av_dict_set(&dictionary, "listen_timeout", "10000000", 0); // 单位微妙
+
+    cout << "avformat_open_input:" << endl;
     /**
-     * TODO 第二步：查找媒体中的音视频流的信息
+     * 1，AVFormatContext *
+     * 2，路径 url:文件路径或直播地址
+     * 3，AVInputFormat *fmt  Mac、Windows 摄像头、麦克风， 我们目前安卓用不到
+     * 4，各种设置：例如：Http 连接超时， 打开rtmp的超时  AVDictionary **options
      */
+    int r = avformat_open_input(&formatContext, "rtmp://ziku.montauklaw.com:1935/livestream", nullptr, &dictionary);
+
+    // 释放字典
+    av_dict_free(&dictionary);
+    if (r)
+    {
+        cout << "open media failed :" << r << endl;
+        avformat_close_input(&formatContext);
+        return;
+    }
+
+    cout << "avformat_find_stream_info:" << endl;
+
     r = avformat_find_stream_info(formatContext, nullptr);
     if (r < 0)
     {
+        cout << " avformat_find_stream_info failed " << endl;
         avformat_close_input(&formatContext);
         return;
     }
 
-    // 你在 xxx.mp4 能够拿到
-    // 你在 xxx.flv 都能拿到
-    // avformat_find_stream_info FFmpeg内部源码已经做（流探索）了，所以可以拿到 总时长
-    this->duration = formatContext->duration / AV_TIME_BASE; // FFmpeg的单位 基本上都是  有理数(时间基)，所以你需要这样转
-
     AVCodecContext *codecContext = nullptr;
+    cout << "formatContext->nb_streams:" << formatContext->nb_streams << endl;
 
-    /**
-     * TODO 第三步：根据流信息，流的个数，用循环来找
-     */
-    for (int stream_index = 0; stream_index < formatContext->nb_streams; ++stream_index)
+    int stream_index = 0;
+
+    AVStream *stream = formatContext->streams[stream_index];
+
+    AVCodecParameters *parameters = stream->codecpar;
+    // parameters->codec_id = AV_CODEC_ID_H264;
+    if (parameters == nullptr)
     {
-        /**
-         * TODO 第四步：获取媒体流（视频，音频）
-         */
-        AVStream *stream = formatContext->streams[stream_index];
+        cout << "parameters == nullptr" << endl;
+        return;
+    }
+    // 27: H264
+    cout << "codec_id:" << parameters->codec_id << endl;
+    // 0: AVMEDIA_TYPE_VIDEO
+    cout << "codec_type:" << parameters->codec_type << endl;
+    // width 1920
+    cout << "width:" << parameters->width << endl;
+    // height 1080
+    cout << "height:" << parameters->height << endl;
+    // 0: AV_PIX_FMT_YUV420P
+    cout << "format:" << parameters->format << endl;
+    // 0
+    cout << "bit_rate:" << parameters->bit_rate << endl;
+    // 1: AVCOL_RANGE_MPEG
+    cout << "color_range:" << parameters->color_range << endl;
 
-        /**
-         * TODO 第五步：从上面的流中 获取 编码解码的【参数】
-         * 由于：后面的编码器 解码器 都需要参数（宽高 等等）
-         */
-        AVCodecParameters *parameters = stream->codecpar;
+    // 0: AVCHROMA_LOC_LEFT
+    cout << "chroma_location:" << parameters->chroma_location << endl;
 
-        /**
-         * TODO 第六步：（根据上面的【参数】）获取编解码器
-         */
-        AVCodec *codec = avcodec_find_decoder(parameters->codec_id);
-        if (!codec)
-        {
-            // TODO 播放器收尾 1
-            avformat_close_input(&formatContext);
-        }
+    // 1: AVCOL_SPC_BT709
+    cout << "color_space:" << parameters->color_space << endl;
 
-        /**
-         * TODO 第七步：编解码器 上下文 （这个才是真正干活的）
-         */
-        codecContext = avcodec_alloc_context3(codec);
-        if (!codecContext)
-        {
+    // 1: AV_FIELD_PROGRESSIVE
+    cout << "field_order:" << parameters->field_order << endl;
 
-            avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
-            avformat_close_input(&formatContext);
+    // 8
+    cout << "bits_per_raw_sample:" << parameters->bits_per_raw_sample << endl;
 
-            return;
-        }
+    cout << "video_delay: " << parameters->video_delay << endl;
+    cout << "codec_tag: " << parameters->codec_tag << endl;
+    cout << "bits_per_coded_sample: " << parameters->bits_per_coded_sample << endl;
+    cout << "profile: " << parameters->profile << endl;
+    cout << "level: " << parameters->level << endl;
+    cout << "color_trc: " << parameters->color_trc << endl;
+    cout << "color_primaries: " << parameters->color_primaries << endl;
 
-        /**
-         * TODO 第八步：他目前是一张白纸（parameters copy codecContext）
-         */
-        r = avcodec_parameters_to_context(codecContext, parameters);
-        if (r < 0)
-        {
-            avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
-            avformat_close_input(&formatContext);
-            return;
-        }
+#if 0
+    AVCodecParameters *codecParameters = avcodec_parameters_alloc();
 
-        /**
-         * TODO 第九步：打开解码器
-         */
-        r = avcodec_open2(codecContext, codec, nullptr);
-        if (r)
-        {
-            // 非0就是true
-            avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
-            avformat_close_input(&formatContext);
-            return;
-        }
+    codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
+    codecParameters->codec_id = AV_CODEC_ID_H264; // AV_CODEC_ID_H264;
+    codecParameters->width = 1920;
+    codecParameters->height = 1080;
+    codecParameters->chroma_location = AVCHROMA_LOC_LEFT;
+    codecParameters->format = AV_PIX_FMT_YUV420P;
+    codecParameters->bit_rate = 0;
+    codecParameters->color_range = AVCOL_RANGE_MPEG;
+    codecParameters->color_space = AVCOL_SPC_BT709;
+    codecParameters->field_order = AV_FIELD_PROGRESSIVE;
+    codecParameters->bits_per_raw_sample = 8;
+    codecParameters->video_delay = 2;
+    codecParameters->codec_tag = 0;
+    codecParameters->bits_per_coded_sample = 0;
+    codecParameters->profile = 100;
+    codecParameters->level = 40;
+    codecParameters->color_trc = AVCOL_TRC_UNSPECIFIED;
+    codecParameters->color_primaries = AVCOL_PRI_UNSPECIFIED;
+#endif
 
-        // TODO 音视频同步 2
-        AVRational time_base = stream->time_base;
+    // AVCodec *codec = avcodec_find_decoder(codecParameters->codec_id);
+    AVCodec *codec = avcodec_find_decoder(parameters->codec_id);
+    if (!codec)
+    {
+        cout << "avcodec_find_decoder failed" << endl;
+        avformat_close_input(&formatContext);
+    }
 
-        if (parameters->codec_type == AVMediaType::AVMEDIA_TYPE_VIDEO)
-        {
+    cout << "avcodec_alloc_context3" << endl;
+    codecContext = avcodec_alloc_context3(codec);
+    if (!codecContext)
+    {
 
-            // 虽然是视频类型，但是只有一帧封面
-            if (stream->disposition & AV_DISPOSITION_ATTACHED_PIC)
-            {
-                continue;
-            }
+        cout << "avcodec_alloc_context3 failed" << endl;
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
 
-            // TODO 音视频同步 2.2 （视频独有的 fps值）
-            AVRational fps_rational = stream->avg_frame_rate;
-            int fps = av_q2d(fps_rational);
+        return;
+    }
 
-            // 是视频
-            video_channel = new VideoChannel(stream_index, codecContext, time_base, fps);
-            video_channel->setRenderCallback(renderCallback);
-        }
-    } // for end
+    r = avcodec_parameters_to_context(codecContext, parameters);
+    if (r < 0)
+    {
+        cout << "avcodec_parameters_to_context failed" << endl;
+        avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
+        avformat_close_input(&formatContext);
+        return;
+    }
+
+    cout << "avcodec_open2" << endl;
+    r = avcodec_open2(codecContext, codec, nullptr);
+    if (r)
+    {
+        cout << "avcodec_open2 failed" << endl;
+        avcodec_free_context(&codecContext); // 释放此上下文 avcodec 他会考虑到，你不用管*codec
+        avformat_close_input(&formatContext);
+        return;
+    }
+
+    cout << "codecContext->codec_type:" << codecContext->codec_type << endl;
+
+    // 是视频
+    video_channel = new VideoChannel(stream_index, codecContext, FPS);
+    video_channel->setRenderCallback(renderCallback);
 
     ifReady = true;
 }
@@ -207,7 +310,7 @@ void DerryPlayer::start_()
     while (isPlaying)
     {
         // 解决方案：视频 我不丢弃数据，等待队列中数据 被消费 内存泄漏点1.1
-        if (video_channel && video_channel->packets.size() > 100)
+        if (video_channel && video_channel->packets.size() > 1000)
         {
             av_usleep(10 * 1000); // 单位：microseconds 微妙 10毫秒
             continue;
@@ -215,6 +318,8 @@ void DerryPlayer::start_()
 
         // AVPacket 可能是音频 也可能是视频（压缩包）
         AVPacket *packet = av_packet_alloc();
+        // int ret = av_parser_parse2(parser, c, &packet->data, &packet->size,
+        //                            data, data_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
 
         int ret = av_read_frame(formatContext, packet);
         if (!ret)
@@ -223,10 +328,11 @@ void DerryPlayer::start_()
             {
                 // 代表是视频
                 video_channel->packets.insertToQueue(packet);
+                // cout << packet->size << endl;
             }
         }
         else if (ret == AVERROR_EOF)
-        { 
+        {
             // end of file == 读到文件末尾了 == AVERROR_EOF
             // TODO 1.3 内存泄漏点
             // TODO 表示读完了，要考虑释放播放完成，表示读完了 并不代表播放完毕，以后处理【同学思考 怎么处理】
@@ -239,6 +345,9 @@ void DerryPlayer::start_()
         {
             break; // av_read_frame(formatContext,  packet); 出现了错误，结束当前循环
         }
+
+        av_usleep(1000 * 1); // 10毫秒
+
     } // end while
     isPlaying = false;
     video_channel->stop();
@@ -355,7 +464,7 @@ void DerryPlayer::stop()
     pthread_create(&pid_stop, nullptr, task_stop, this);
 }
 
-bool DerryPlayer::if_ready_to_start() 
+bool DerryPlayer::if_ready_to_start()
 {
     return ifReady;
 }

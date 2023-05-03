@@ -32,20 +32,19 @@ void renderCallback(uint8_t *src_data, int width, int height, int src_linesize)
 {
     static int counter = 0;
     // player->get_video_channel()->start_detecting();
-    // cout << "renderCallback" << endl;
-    // cout << "width: " << width << endl;
-    // cout << "height: " << height << endl;
-    // cout << "src_linesize: " << src_linesize << endl;
+    cout << "renderCallback" << endl;
+    cout << "width: " << width << endl;
+    cout << "height: " << height << endl;
+    cout << "src_linesize: " << src_linesize << endl;
     if (counter == 0)
     {
-        cv::Mat im = cv::Mat(cv::Size(width, height), CV_8UC3, src_data);
+        // cv::Mat im = cv::Mat(cv::Size(width, height), CV_8UC3, src_data);
         // cv::imwrite("/tmp/test.jpg", im);
     }
     counter++;
     // 显示数据
     cout << (int)src_data[0] << " " << (int)src_data[1] << " " << (int)src_data[2] << endl;
-
-    // sleep(1);
+    sleep(1);
     // player->get_video_channel()->stop_detecting();
 }
 
@@ -54,13 +53,14 @@ int main(int argc, char *argv[])
     cout << "start init_decode" << endl;
     player = new DerryPlayer(RTMP_ADDR);
     player->setRenderCallback(renderCallback);
+    cout << "start prepare" << endl;
     player->prepare();
 
     while (player->if_ready_to_start() == false)
     {
         usleep(1000 * 1000);
     }
-
+    cout << "start decode" << endl;
     player->start();
 
     getchar();

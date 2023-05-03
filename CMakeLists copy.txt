@@ -1,0 +1,93 @@
+# 最低版本要求
+cmake_minimum_required(VERSION 3.10.1)
+
+# 项目信息
+project(ffmpeg_rtmp)
+set(CMAKE_SYSTEM_NAME Linux)
+
+# 交叉编译
+set(TOOLCHAIN_DIR /opt/atk-dlrv1126-toolchain)
+set(CMAKE_CXX_COMPILER ${TOOLCHAIN_DIR}/usr/bin/arm-linux-gnueabihf-g++)
+set(CMAKE_C_COMPILER ${TOOLCHAIN_DIR}/usr/bin/arm-linux-gnueabihf-gcc)
+set(SYSROOT ${TOOLCHAIN_DIR}/arm-buildroot-linux-gnueabihf/sysroot/usr/include)
+set(CMAKE_SYSROOT ${TOOLCHAIN_DIR}/arm-buildroot-linux-gnueabihf/sysroot)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+link_directories(/opt/arm-buildroot-linux-gnueabihf/sysroot/usr/lib/)
+# 添加opencv库
+# find_package(OpenCV REQUIRED)
+
+# x86测试用系统的x86库
+# if(OpenCV_FOUND)
+#     message(STATUS "OpenCV Found")
+#     message(STATUS "OpenCV_INCLUDE_DIRS = ${OpenCV_INCLUDE_DIRS}")
+#     message(STATUS "OpenCV_LIBS = ${OpenCV_LIBS}")
+# else()
+#     message(FATAL_ERROR "OpenCV Not Found!")
+# endif()
+
+set(LIB_ARCH lib)
+
+# rknn api
+set(RKNN_API_PATH ${CMAKE_SOURCE_DIR}/librknn_api)
+include_directories(${RKNN_API_PATH}/include)
+set(RKNN_API_LIB ${RKNN_API_PATH}/${LIB_ARCH}/librknn_api.so)
+
+# opencv
+set(AMRHF_SYS_LIB ${TOOLCHAIN_DIR}/arm-buildroot-linux-gnueabihf/sysroot/usr/lib)
+set(OPENCV_PATH ${AMRHF_SYS_LIB})
+set(OPENCV_INCLUDE ${TOOLCHAIN_DIR}/arm-buildroot-linux-gnueabihf/sysroot/usr/include)
+include_directories(${OPENCV_INCLUDE})
+# set(OPENCV_LIB_PATH ${OPENCV_PATH}/lib)
+link_directories(${AMRHF_SYS_LIB})
+set(OPENCV_LIBS ${OPENCV_PATH}/libopencv_calib3d.so
+                ${OPENCV_PATH}/libopencv_core.so
+                ${OPENCV_PATH}/libopencv_dnn.so
+                ${OPENCV_PATH}/libopencv_features2d.so 
+                ${OPENCV_PATH}/libopencv_flann.so
+                ${OPENCV_PATH}/libopencv_freetype.so
+                ${OPENCV_PATH}/libopencv_highgui.so
+                ${OPENCV_PATH}/libopencv_imgcodecs.so
+                ${OPENCV_PATH}/libopencv_imgproc.so
+                ${OPENCV_PATH}/libopencv_ml.so
+                ${OPENCV_PATH}/libopencv_objdetect.so
+                ${OPENCV_PATH}/libopencv_photo.so
+                ${OPENCV_PATH}/libopencv_shape.so
+                ${OPENCV_PATH}/libopencv_stitching.so
+                ${OPENCV_PATH}/libopencv_superres.so
+                ${OPENCV_PATH}/libopencv_videoio.so
+                ${OPENCV_PATH}/libopencv_video.so
+                ${OPENCV_PATH}/libopencv_videostab.so )
+message(STATUS "OPENCV_LIBS = ${OPENCV_LIBS}")
+
+
+add_executable(ffmpeg_rtmp 
+                src/main.cpp
+                src/VideoChannel.cpp
+                src/DerryPlayer.cpp)
+
+# ffmpeg arm的库
+set(FFMpeg_INCLUDE_DIRS /home/marc/out_ffmpeg_arm/include)
+link_directories(/home/marc/out_ffmpeg_arm/lib)  
+# ffmpeg x86的库             
+# set(FFMpeg_INCLUDE_DIRS /home/marc/out_ffmpeg_x86/include)
+# link_directories(/home/marc/out_ffmpeg_x86/lib)
+
+set(FFMpeg_LIBS avcodec avformat avutil swresample swscale)
+# find_package( OpenCV REQUIRED )
+# list( APPEND ThirdParty_LIBS ${OpenCV_LIBS} )
+# include_directories( ${OpenCV_INCLUDE_DIRS} )
+# message(STATUS "ThirdParty_LIBS = ${ThirdParty_LIBS}")
+
+include_directories(ffmpeg_rtmp ${FFMpeg_INCLUDE_DIRS} ${OPENCV_INCLUDE})
+
+target_link_libraries(ffmpeg_rtmp 
+                      ${FFMpeg_LIBS} 
+                      pthread z dl 
+                      ${OPENCV_LIBS} 
+                      ${RKNN_API_LIB})
+
+

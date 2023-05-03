@@ -10,4 +10,4 @@ make
 
 或者老办法
 cmake -S . -B build
-cmake --build
+cmake --build build

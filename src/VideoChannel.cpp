@@ -37,7 +37,7 @@ void dropAVPacket(queue<AVPacket *> &q)
     }
 }
 
-VideoChannel::VideoChannel(int stream_index, AVCodecContext *codecContext, AVRational time_base, int fps)
+VideoChannel::VideoChannel(int stream_index, AVCodecContext *codecContext, int fps)
     : BaseChannel(stream_index, codecContext, time_base),
       fps(fps)
 {
@@ -88,7 +88,8 @@ void VideoChannel::video_decode()
             av_usleep(10 * 1000); // 单位：microseconds 微妙 10毫秒
             continue;
         }
-
+        // cout << "frames size" << frames.size() << endl;
+        // cout << "packet size" << packets.size() << endl;
         int ret = packets.getQueueAndDel(pkt); // 阻塞式函数 取出刚刚DerryPlayer中加入的pkt
         if (!isPlaying)
         {
@@ -116,6 +117,7 @@ void VideoChannel::video_decode()
         if (ret == AVERROR(EAGAIN))
         {
             // B帧  B帧参考前面成功  B帧参考后面失败   可能是P帧没有出来，再拿一次就行了
+            cout << "avcodec_receive_frame  AVERROR(EAGAIN)" << endl;
             continue;
         }
         else if (ret != 0)
@@ -128,16 +130,19 @@ void VideoChannel::video_decode()
             break; // 出错误了
         }
 
+        // 终于拿到 原始包了，加入队列-- YUV数据
+        // frames.insertToQueue(frame);
+        /// cout << "insert to queue size" << frames.size() << endl;
         if (frames.size() == 0)
         {
             // 终于拿到 原始包了，加入队列-- YUV数据
             frames.insertToQueue(frame);
         }
-        else
-        {
-            av_frame_unref(frame);
-            releaseAVFrame(&frame);
-        }
+        // else
+        // {
+        //     av_frame_unref(frame);
+        //     releaseAVFrame(&frame);
+        // }
         // cout << packets.size() << endl;
         // TODO 第五节课 内存泄漏点 4
         // 安心释放pkt本身空间释放 和 pkt成员指向的空间释放
