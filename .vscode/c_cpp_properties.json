@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/opencv4",
+                "${workspaceFolder}/include",
+                "/home/marc//out_ffmpeg_x86/include",
+                "${workspaceFolder}/librknn_api/3rdparty/opencv/opencv-linux-armhf/include",
+                "${workspaceFolder}/include",
+            ],
+            "defines": [],
+            "compilerPath": "/opt/atk-dlrv1126-toolchain/usr/bin/arm-linux-gnueabihf-g++",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "linux-gcc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}
